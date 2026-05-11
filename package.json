@@ -13,7 +13,7 @@
     "prisma:studio": "prisma studio",
     "seed:admin": "ts-node src/seedAdmin.ts",
     "seed:lookups": "ts-node src/seed.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "npx prisma generate"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.4.1",
