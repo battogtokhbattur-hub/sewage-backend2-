@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "npx prisma generate && ./node_modules/.bin/tsc",
+  "buildCommand": "npx prisma generate && npx tsc",
   "installCommand": "npm install",
   "framework": null
 }
