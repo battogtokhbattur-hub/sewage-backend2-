@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "npx prisma generate && npx tsc --skipLibCheck",
+  "buildCommand": "npx prisma generate && npx esbuild src/index.ts --bundle --platform=node --outfile=dist/index.js --external:@prisma/client --external:bcrypt --external:nodemailer",
   "installCommand": "npm install",
   "outputDirectory": "dist",
   "framework": null
