@@ -226,5 +226,8 @@ app.delete("/admin/orders/:id", auth, adminOnly, async (req: any, res: any) => {
   }
 });
 
-/* ── Start ── */
-app.listen(PORT, () => console.log(`Backend running on http://localhost:${PORT}`));
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, () => console.log(`Backend running on http://localhost:${PORT}`));
+}
+
+export default app;
