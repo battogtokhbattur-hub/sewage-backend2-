@@ -1,0 +1,25 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = __importDefault(require("express"));
+const cors_1 = __importDefault(require("cors"));
+const auth_1 = __importDefault(require("./routes/auth"));
+const pricing_1 = __importDefault(require("./routes/pricing"));
+const orders_1 = __importDefault(require("./routes/orders"));
+const admin_1 = __importDefault(require("./routes/admin"));
+const profile_1 = __importDefault(require("./routes/profile"));
+const meta_1 = __importDefault(require("./routes/meta"));
+const payment_1 = __importDefault(require("./routes/payment"));
+const app = (0, express_1.default)();
+app.use((0, cors_1.default)({ origin: "*", credentials: true }));
+app.use(express_1.default.json());
+app.use("/api/auth", auth_1.default);
+app.use("/api/pricing", pricing_1.default);
+app.use("/api/orders", orders_1.default);
+app.use("/api/admin", admin_1.default);
+app.use("/api/profile", profile_1.default);
+app.use("/api/meta", meta_1.default);
+app.use("/api/payment", payment_1.default);
+exports.default = app;
