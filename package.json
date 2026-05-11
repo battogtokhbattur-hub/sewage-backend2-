@@ -12,7 +12,8 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "seed:admin": "ts-node src/seedAdmin.ts",
-    "seed:lookups": "ts-node src/seed.ts"
+    "seed:lookups": "ts-node src/seed.ts",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.4.1",
