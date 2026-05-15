@@ -69,7 +69,7 @@ app.use("/profile", profileRoutes);
 app.get("/", (_req, res) => res.json({ message: "✅ API Running" }));
 app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
 
-// Глобал error handler — алдаа гарахад мөнхөд гацахаас сэргийлнэ
+// Глобал error handler
 app.use((err: any, _req: any, res: any, _next: any) => {
   console.error("Unhandled error:", err);
   res.status(err.status || 500).json({
