@@ -5,9 +5,8 @@
   "type": "commonjs",
   "main": "dist/index.js",
   "scripts": {
-  "build": "prisma generate && tsc",
-  "vercel-build": "prisma generate"
-
+    "build": "prisma generate && tsc",
+    "vercel-build": "prisma generate"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.4.1",
