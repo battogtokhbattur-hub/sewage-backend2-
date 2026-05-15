@@ -190,3 +190,13 @@ model PasswordResetToken {
   expiresAt DateTime
   createdAt DateTime @default(now())
 }
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-1.0.x"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")   // ← pooler (port 6543)
+  directUrl = env("DIRECT_URL")     // ← direct (port 5432) — зөвхөн migration-д
+}
