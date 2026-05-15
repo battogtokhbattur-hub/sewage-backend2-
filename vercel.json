@@ -1,16 +1,11 @@
 {
-  "version": 2,
   "installCommand": "rm -rf node_modules && npm ci",
-  "builds": [
-    {
-      "src": "api/index.ts",
-      "use": "@vercel/node",
-      "config": {
-        "includeFiles": ["prisma/**", "src/**"]
-      }
+  "functions": {
+    "api/index.ts": {
+      "includeFiles": "{prisma,src}/**"
     }
-  ],
-  "routes": [
-    { "src": "/(.*)", "dest": "/api/index.ts" }
+  },
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/api/index" }
   ]
 }
