@@ -5,14 +5,15 @@
   "type": "commonjs",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "vercel-build": "npx prisma generate && npx tsc",
-    "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio"
-  },
+  "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+  "build": "prisma generate && tsc",
+  "start": "node dist/index.js",
+  "prisma:generate": "prisma generate",
+  "prisma:migrate": "prisma migrate dev",
+  "prisma:studio": "prisma studio",
+  "seed:admin": "ts-node src/seedAdmin.ts",
+  "seed:lookups": "ts-node src/seed.ts"
+},
   "dependencies": {
     "@prisma/adapter-pg": "^7.4.1",
     "@prisma/client": "^6.19.2",
