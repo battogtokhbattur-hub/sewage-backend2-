@@ -13,13 +13,19 @@ dotenv.config();
 
 const app = express();
 
-app.use(cors());
+// CORS тохиргоо - frontend домэйнийг зөвшөөрөх
+app.use(cors({
+  origin: [
+    "http://localhost:3000",
+    "https://urgujikh-house.vercel.app",
+    "https://urgujikh-house-git-main-battogtokhbattur-hubs-projects.vercel.app"
+  ],
+  credentials: true
+}));
+
 app.use(express.json());
 
-/* ──────────────────────────────────────────────
-   ВАЖНО: Frontend нь `NEXT_PUBLIC_API_URL=http://localhost:4000/api`
-   гэж тохируулсан тул бүх роут дээр `/api` prefix байх ёстой.
-────────────────────────────────────────────── */
+// API routes
 app.use("/api/auth",    authRoutes);
 app.use("/api/orders",  orderRoutes);
 app.use("/api/admin",   adminRoutes);
@@ -28,7 +34,7 @@ app.use("/api/meta",    metaRoutes);
 app.use("/api/pricing", pricingRoutes);
 app.use("/api/profile", profileRoutes);
 
-// ── Хуучин код-той нийцтэй байх ──
+// Хуучин кодтой нийцтэй (prefix-гүй)
 app.use("/auth",    authRoutes);
 app.use("/orders",  orderRoutes);
 app.use("/admin",   adminRoutes);
@@ -37,10 +43,8 @@ app.use("/meta",    metaRoutes);
 app.use("/pricing", pricingRoutes);
 app.use("/profile", profileRoutes);
 
+// Health check
 app.get("/", (_req, res) => res.json({ message: "✅ API Running" }));
+app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
 
-const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
-  console.log(`Backend running on http://localhost:${PORT}`);
-  console.log(`API endpoints mounted at /api/* (e.g. POST /api/auth/login)`);
-});
+export default app;
