@@ -69,6 +69,58 @@ app.use("/profile", profileRoutes);
 app.get("/", (_req, res) => res.json({ message: "✅ API Running" }));
 app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
 
+// ────────────────────────────────────────────────
+// EMAIL TEST ENDPOINT — туршилтын дараа устгана
+// ────────────────────────────────────────────────
+app.get("/api/test-email", async (_req, res) => {
+  // Environment variables шалгах
+  const envInfo = {
+    adminEmail: process.env.ADMIN_EMAIL || "NOT SET",
+    smtpUser: process.env.SMTP_USER || "NOT SET",
+    smtpHost: process.env.SMTP_HOST || "NOT SET",
+    smtpPort: process.env.SMTP_PORT || "NOT SET",
+    hasSmtpPass: !!process.env.SMTP_PASS,
+    smtpPassLength: process.env.SMTP_PASS?.length || 0,
+    appUrl: process.env.APP_URL || "NOT SET",
+  };
+
+  try {
+    const { sendOrderNotification } = await import("./services/emailService");
+
+    await sendOrderNotification({
+      id: 999,
+      serviceType: "🧪 Тест үйлчилгээ",
+      district: "Тест дүүрэг",
+      address: "Тест хаяг — энэ нь тест email",
+      volume: 5,
+      volumeUnit: "TON",
+      date: new Date().toISOString().split("T")[0],
+      timeSlot: "09-11",
+      basePrice: 100000,
+      addOns: [],
+      totalPrice: 100000,
+      customerName: "Тест хэрэглэгч",
+      customerEmail: "test@example.com",
+      customerPhone: "99999999",
+    });
+
+    res.json({
+      success: true,
+      message: "✅ Test email амжилттай илгээгдлээ!",
+      sentTo: envInfo.adminEmail,
+      env: envInfo,
+    });
+  } catch (err: any) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+      errorCode: err.code,
+      errorCommand: err.command,
+      env: envInfo,
+    });
+  }
+});
+
 // Глобал error handler
 app.use((err: any, _req: any, res: any, _next: any) => {
   console.error("Unhandled error:", err);
