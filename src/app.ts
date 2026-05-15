@@ -13,10 +13,8 @@ dotenv.config();
 
 const app = express();
 
-// Vercel-ийн ард ажиллах үед client IP-г зөв авах
 app.set("trust proxy", 1);
 
-// CORS — production домэйн + бүх preview deployment
 const STATIC_ORIGINS = [
   "http://localhost:3000",
   "http://localhost:3001",
@@ -26,16 +24,11 @@ const STATIC_ORIGINS = [
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Postman, curl, server-to-server — origin байхгүй
       if (!origin) return callback(null, true);
-
       if (STATIC_ORIGINS.includes(origin)) return callback(null, true);
-
-      // Preview deployment: urgujikh-house-*.vercel.app
       if (/^https:\/\/urgujikh-house.*\.vercel\.app$/.test(origin)) {
         return callback(null, true);
       }
-
       console.warn("CORS blocked:", origin);
       return callback(new Error("Not allowed by CORS: " + origin));
     },
@@ -47,7 +40,7 @@ app.use(
 
 app.use(express.json({ limit: "2mb" }));
 
-// API routes (/api prefix)
+// API routes
 app.use("/api/auth", authRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/admin", adminRoutes);
@@ -56,7 +49,7 @@ app.use("/api/meta", metaRoutes);
 app.use("/api/pricing", pricingRoutes);
 app.use("/api/profile", profileRoutes);
 
-// Prefix-гүй routes (хуучин код-той нийцтэй)
+// Prefix-гүй routes
 app.use("/auth", authRoutes);
 app.use("/orders", orderRoutes);
 app.use("/admin", adminRoutes);
@@ -69,11 +62,8 @@ app.use("/profile", profileRoutes);
 app.get("/", (_req, res) => res.json({ message: "✅ API Running" }));
 app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
 
-// ────────────────────────────────────────────────
-// EMAIL TEST ENDPOINT — туршилтын дараа устгана
-// ────────────────────────────────────────────────
+// EMAIL TEST ENDPOINT
 app.get("/api/test-email", async (_req, res) => {
-  // Environment variables шалгах
   const envInfo = {
     adminEmail: process.env.ADMIN_EMAIL || "NOT SET",
     smtpUser: process.env.SMTP_USER || "NOT SET",
