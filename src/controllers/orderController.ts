@@ -1,5 +1,3 @@
-// src/controllers/orderController.ts
-
 import { Request, Response } from "express";
 import prisma from "../prisma";
 import { sendAdminOrderNotification } from "../services/emailService";

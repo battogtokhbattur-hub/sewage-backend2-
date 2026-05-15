@@ -78,6 +78,8 @@ async function main() {
     { startTime: "11:00", endTime: "13:00" },
     { startTime: "14:00", endTime: "16:00" },
     { startTime: "16:00", endTime: "18:00" },
+    { startTime: "18:00", endTime: "19:00" }, // ← НЭМ
+    { startTime: "19:00", endTime: "20:00" }, // ← НЭМ
   ];
 
   const today = new Date();

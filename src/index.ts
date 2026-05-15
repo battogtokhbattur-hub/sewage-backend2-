@@ -16,6 +16,10 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+/* ──────────────────────────────────────────────
+   ВАЖНО: Frontend нь `NEXT_PUBLIC_API_URL=http://localhost:4000/api`
+   гэж тохируулсан тул бүх роут дээр `/api` prefix байх ёстой.
+────────────────────────────────────────────── */
 app.use("/api/auth",    authRoutes);
 app.use("/api/orders",  orderRoutes);
 app.use("/api/admin",   adminRoutes);
@@ -24,14 +28,19 @@ app.use("/api/meta",    metaRoutes);
 app.use("/api/pricing", pricingRoutes);
 app.use("/api/profile", profileRoutes);
 
+// ── Хуучин код-той нийцтэй байх ──
+app.use("/auth",    authRoutes);
+app.use("/orders",  orderRoutes);
+app.use("/admin",   adminRoutes);
+app.use("/payment", paymentRoutes);
+app.use("/meta",    metaRoutes);
+app.use("/pricing", pricingRoutes);
+app.use("/profile", profileRoutes);
+
 app.get("/", (_req, res) => res.json({ message: "✅ API Running" }));
 
-// Local dev-д л ажиллана
-if (process.env.NODE_ENV !== "production") {
-  const PORT = process.env.PORT || 4000;
-  app.listen(PORT, () => {
-    console.log(`Backend running on http://localhost:${PORT}`);
-  });
-}
-
-export default app; // ← энэ нэмэгдлээ
+const PORT = process.env.PORT || 4000;
+app.listen(PORT, () => {
+  console.log(`Backend running on http://localhost:${PORT}`);
+  console.log(`API endpoints mounted at /api/* (e.g. POST /api/auth/login)`);
+});
