@@ -8,12 +8,10 @@
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "vercel-build": "prisma generate && tsc",
+    "vercel-build": "npx prisma generate && npx tsc",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio",
-    "seed:admin": "ts-node src/seedAdmin.ts",
-    "seed:lookups": "ts-node src/seed.ts"
+    "prisma:studio": "prisma studio"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.4.1",
