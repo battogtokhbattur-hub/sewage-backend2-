@@ -1,19 +1,25 @@
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
 
 /* ══════════════════════════════════════════════════
-   TRANSPORTER
+   RESEND CLIENT (singleton, lazy)
 ══════════════════════════════════════════════════ */
-function createTransporter() {
-  return nodemailer.createTransport({
-    host:   process.env.SMTP_HOST   ?? "smtp.gmail.com",
-    port:   Number(process.env.SMTP_PORT ?? 587),
-    secure: Number(process.env.SMTP_PORT ?? 587) === 465,
-    auth: {
-      user: process.env.SMTP_USER ?? "",
-      pass: process.env.SMTP_PASS ?? "",
-    },
-  });
+let _resend: Resend | null = null;
+function getResend(): Resend {
+  if (_resend) return _resend;
+  const key = process.env.RESEND_API_KEY;
+  if (!key) {
+    throw new Error("RESEND_API_KEY is not set in environment variables");
+  }
+  _resend = new Resend(key);
+  return _resend;
 }
+
+/* ── FROM хаяг ──
+   Эхэндээ: "Өргөжих Хаус <onboarding@resend.dev>"  (өөрийн домэйнгүй ажиллана)
+   Дараа нь өөрийн домэйнгээ verify хийсний дараа: noreply@yourdomain.mn
+*/
+const FROM_ADDRESS =
+  process.env.RESEND_FROM ?? "Өргөжих Хаус <onboarding@resend.dev>";
 
 /* ══════════════════════════════════════════════════
    FORMATTERS
@@ -42,7 +48,7 @@ function fmtDate(d: string) {
 }
 
 /* ══════════════════════════════════════════════════
-   BANK INFO  (env-ээс авна, fallback байна)
+   BANK INFO
 ══════════════════════════════════════════════════ */
 const BANK_INFO = {
   company: process.env.BANK_COMPANY ?? "Өргөжих Хаус ХХК",
@@ -107,7 +113,7 @@ export interface OrderEmailPayload {
   pitStatus?:     string;
   pitType?:       string;
   volume:         number;
-  volumeUnit?:    string;   // "TON" | "M3" | "LITER"
+  volumeUnit?:    string;
   date:           string;
   timeSlot:       string;
   basePrice:      number;
@@ -119,7 +125,7 @@ export interface OrderEmailPayload {
 }
 
 /* ══════════════════════════════════════════════════
-   HTML BUILDER
+   HTML BUILDER  (өмнөх кодтой ижил)
 ══════════════════════════════════════════════════ */
 function buildOrderEmail(p: OrderEmailPayload, sentAt: string): string {
   const pit      = normalizePitStatus(p.pitStatus);
@@ -130,7 +136,6 @@ function buildOrderEmail(p: OrderEmailPayload, sentAt: string): string {
   const hasAddOn = addOns.length > 0 && addOnSum > 0;
   const dashboardUrl = `${process.env.APP_URL ?? "http://localhost:3000"}/dashboard/orders/${p.id}`;
 
-  /* ── table row helper ── */
   const row = (
     icon: string,
     label: string,
@@ -148,7 +153,6 @@ function buildOrderEmail(p: OrderEmailPayload, sentAt: string): string {
     </td>
   </tr>`;
 
-  /* ── section header ── */
   const section = (title: string) => `
   <tr>
     <td colspan="2" style="padding:14px 22px 4px;background:#f8fafc;border-top:1px solid #e2e8f0;">
@@ -158,7 +162,6 @@ function buildOrderEmail(p: OrderEmailPayload, sentAt: string): string {
     </td>
   </tr>`;
 
-  /* ── add-on rows ── */
   const addOnRows = addOns.map(a =>
     row("✨", a.label, `+${fmtMnt(a.price)}`, { color: "#f59e0b" })
   ).join("");
@@ -170,60 +173,40 @@ function buildOrderEmail(p: OrderEmailPayload, sentAt: string): string {
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Шинэ захиалга #${p.id}</title>
 </head>
-<body style="margin:0;padding:0;background:#eef2f7;
-  font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;">
-
-<table width="100%" cellpadding="0" cellspacing="0"
-  style="background:#eef2f7;padding:36px 16px;">
+<body style="margin:0;padding:0;background:#eef2f7;font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#eef2f7;padding:36px 16px;">
 <tr><td align="center">
-
 <table width="600" cellpadding="0" cellspacing="0"
   style="max-width:600px;width:100%;background:#ffffff;border-radius:18px;
     overflow:hidden;box-shadow:0 8px 40px rgba(30,64,175,0.14);">
-
-  <!-- ══ HEADER ══ -->
   <tr>
-    <td colspan="2"
-      style="background:linear-gradient(135deg,#1e3a8a 0%,#1d4ed8 55%,#2563eb 100%);
-        padding:36px 28px 30px;">
+    <td colspan="2" style="background:linear-gradient(135deg,#1e3a8a 0%,#1d4ed8 55%,#2563eb 100%);padding:36px 28px 30px;">
       <table width="100%" cellpadding="0" cellspacing="0"><tr>
         <td>
-          <div style="background:rgba(255,255,255,0.16);border-radius:12px;
-            display:inline-block;padding:9px 15px;margin-bottom:14px;">
+          <div style="background:rgba(255,255,255,0.16);border-radius:12px;display:inline-block;padding:9px 15px;margin-bottom:14px;">
             <span style="font-size:22px;">🚛</span>
           </div>
-          <h1 style="margin:0 0 8px;font-size:25px;font-weight:800;
-            color:#ffffff;line-height:1.2;letter-spacing:-0.01em;">
+          <h1 style="margin:0 0 8px;font-size:25px;font-weight:800;color:#ffffff;line-height:1.2;letter-spacing:-0.01em;">
             Шинэ захиалга ирлээ!
           </h1>
           <p style="margin:0;font-size:12.5px;color:rgba(255,255,255,0.68);">
-            Захиалга&nbsp;<strong style="color:#fff;">#${p.id}</strong>
-            &nbsp;•&nbsp;${sentAt}
+            Захиалга&nbsp;<strong style="color:#fff;">#${p.id}</strong>&nbsp;•&nbsp;${sentAt}
           </p>
         </td>
         <td style="text-align:right;vertical-align:top;">
-          <div style="background:#fef3c7;border-radius:20px;
-            padding:6px 14px;display:inline-block;margin-bottom:8px;">
-            <span style="font-size:11.5px;font-weight:800;color:#92400e;">
-              ⏳ Хүлээгдэж буй
-            </span>
+          <div style="background:#fef3c7;border-radius:20px;padding:6px 14px;display:inline-block;margin-bottom:8px;">
+            <span style="font-size:11.5px;font-weight:800;color:#92400e;">⏳ Хүлээгдэж буй</span>
           </div>
           <br/>
-          <span style="font-size:11px;color:rgba(255,255,255,0.55);">
-            Лавлах: ${BANK_INFO.company}
-          </span>
+          <span style="font-size:11px;color:rgba(255,255,255,0.55);">Лавлах: ${BANK_INFO.company}</span>
         </td>
       </tr></table>
     </td>
   </tr>
-
-  <!-- ══ ХЭРЭГЛЭГЧ ══ -->
   ${section("👤 Хэрэглэгчийн мэдээлэл")}
   ${row("🧑", "Нэр",   p.customerName  ?? "—")}
   ${row("✉️", "Имэйл", p.customerEmail ?? "—", { color: "#2563eb" })}
   ${row("📞", "Утас",  p.customerPhone ?? "—")}
-
-  <!-- ══ ЗАХИАЛГА ══ -->
   ${section("📋 Захиалгын дэлгэрэнгүй")}
   ${row("🚛", "Үйлчилгээ", p.serviceType, { bold: true })}
   ${row("🗺️", "Дүүрэг", p.district)}
@@ -242,52 +225,39 @@ function buildOrderEmail(p: OrderEmailPayload, sentAt: string): string {
   ${row("⚖️", "Хэмжээ", `${p.volume} ${fmtUnit(p.volumeUnit ?? "TON")}`)}
   ${row("📅", "Огноо", fmtDate(p.date))}
   ${row("🕐", "Цаг", p.timeSlot, { color: "#2563eb", bold: true })}
-
-  <!-- ══ ҮНЭ ТООЦООЛОЛ ══ -->
   ${section("💰 Үнийн тооцоолол")}
   ${row("📦", "Үндсэн үйлчилгээний үнэ", fmtMnt(p.basePrice))}
   ${addOnRows}
   ${hasAddOn ? row("➕", "Нэмэлт үйлчилгээний нийлбэр", fmtMnt(addOnSum), { color: "#f59e0b", bold: true }) : ""}
-
-  <!-- НИЙТ МӨНГӨН ДҮН -->
   <tr>
     <td colspan="2" style="padding:0;">
       <table width="100%" cellpadding="0" cellspacing="0"><tr>
         <td style="background:linear-gradient(135deg,#1e3a8a,#2563eb);padding:20px 24px;">
           <table width="100%" cellpadding="0" cellspacing="0"><tr>
             <td>
-              <span style="font-size:14px;font-weight:700;color:#fff;">
-                💰 Нийт төлбөр
-              </span>
+              <span style="font-size:14px;font-weight:700;color:#fff;">💰 Нийт төлбөр</span>
               ${hasAddOn ? `<br/><span style="font-size:11px;color:rgba(255,255,255,0.58);">
                 Үндсэн ${fmtMnt(p.basePrice)} + нэмэлт ${fmtMnt(addOnSum)}
               </span>` : ""}
             </td>
             <td style="text-align:right;">
-              <span style="font-size:26px;font-weight:800;color:#fbbf24;">
-                ${fmtMnt(p.totalPrice)}
-              </span>
+              <span style="font-size:26px;font-weight:800;color:#fbbf24;">${fmtMnt(p.totalPrice)}</span>
             </td>
           </tr></table>
         </td>
       </tr></table>
     </td>
   </tr>
-
-  <!-- ══ БАНКНЫ МЭДЭЭЛЭЛ ══ -->
   ${section("🏦 Банкны шилжүүлгийн мэдээлэл")}
   ${row("🏦", "Банк",          BANK_INFO.bank,    { small: true })}
   ${row("🏢", "Компанийн нэр", BANK_INFO.company, { small: true })}
   ${row("💳", "Дансны дугаар", BANK_INFO.account, { small: true, bold: true })}
   ${row("🔢", "IBAN",          BANK_INFO.iban,    { small: true })}
   ${row("📝", "Гүйлгээний утга", ref,             { small: true, bold: true, color: "#2563eb" })}
-
-  <!-- ══ BUTTON ══ -->
   <tr>
     <td colspan="2" style="padding:32px 28px 24px;text-align:center;">
       <a href="${dashboardUrl}"
-        style="display:inline-block;
-          background:linear-gradient(135deg,#2563eb,#1d4ed8);
+        style="display:inline-block;background:linear-gradient(135deg,#2563eb,#1d4ed8);
           color:#ffffff;text-decoration:none;font-size:14.5px;font-weight:700;
           padding:15px 40px;border-radius:12px;letter-spacing:0.02em;
           box-shadow:0 4px 16px rgba(37,99,235,0.35);">
@@ -295,27 +265,53 @@ function buildOrderEmail(p: OrderEmailPayload, sentAt: string): string {
       </a>
     </td>
   </tr>
-
-  <!-- ══ FOOTER ══ -->
   <tr>
-    <td colspan="2"
-      style="padding:16px 28px 28px;text-align:center;border-top:1px solid #f1f5f9;">
+    <td colspan="2" style="padding:16px 28px 28px;text-align:center;border-top:1px solid #f1f5f9;">
       <p style="margin:0;font-size:12px;color:#94a3b8;">
-        ${BANK_INFO.company}
-        &nbsp;•&nbsp;Бохир ус тээвэрлэлтийн систем
+        ${BANK_INFO.company}&nbsp;•&nbsp;Бохир ус тээвэрлэлтийн систем
       </p>
       <p style="margin:6px 0 0;font-size:11px;color:#cbd5e1;">
         Энэ мэйл автоматаар илгээгдсэн. Хариу илгээх шаардлагагүй.
       </p>
     </td>
   </tr>
-
 </table>
-
 </td></tr>
 </table>
 </body>
 </html>`;
+}
+
+/* ══════════════════════════════════════════════════
+   ТӨВЛӨРСӨН SEND HELPER
+   Бүх send функц энэ дотроос Resend дуудна.
+══════════════════════════════════════════════════ */
+async function resendSend(args: {
+  to:      string;
+  subject: string;
+  html:    string;
+  tag?:    string;   // log-д харагдах нэр
+}) {
+  const tag = args.tag ?? "email";
+  try {
+    const { data, error } = await getResend().emails.send({
+      from:    FROM_ADDRESS,
+      to:      args.to,
+      subject: args.subject,
+      html:    args.html,
+    });
+
+    if (error) {
+      console.error(`[${tag}] ❌ Resend API error:`, error);
+      throw new Error(`Resend error: ${error.message ?? JSON.stringify(error)}`);
+    }
+
+    console.log(`[${tag}] ✅ Sent → ${args.to} (id: ${data?.id})`);
+    return data;
+  } catch (err) {
+    console.error(`[${tag}] ❌ Send failed:`, err);
+    throw err;
+  }
 }
 
 /* ══════════════════════════════════════════════════
@@ -328,8 +324,6 @@ export async function sendPasswordResetEmail({
   to: string;
   resetUrl: string;
 }): Promise<void> {
-  const transporter = createTransporter();
-
   const html = `<!DOCTYPE html>
 <html lang="mn">
 <head><meta charset="UTF-8"/></head>
@@ -342,7 +336,7 @@ export async function sendPasswordResetEmail({
   <tr>
     <td style="background:linear-gradient(135deg,#1e3a8a 0%,#2563eb 100%);padding:32px 28px;">
       <h1 style="margin:0;font-size:22px;font-weight:800;color:#fff;">🔐 Нууц үг сэргээх</h1>
-      <p style="margin:8px 0 0;font-size:13px;color:rgba(255,255,255,0.7);">Өргөжих Хаус ХХК</p>
+      <p style="margin:8px 0 0;font-size:13px;color:rgba(255,255,255,0.7);">${BANK_INFO.company}</p>
     </td>
   </tr>
   <tr>
@@ -372,24 +366,21 @@ export async function sendPasswordResetEmail({
 </body>
 </html>`;
 
-  await transporter.sendMail({
-    from: `"Өргөжих Хаус" <${process.env.SMTP_USER}>`,
+  await resendSend({
     to,
     subject: "🔐 Нууц үг сэргээх холбоос",
     html,
+    tag: "password-reset",
   });
-
-  console.log(`[email] ✅ Password reset email sent → ${to}`);
 }
 
 /* ══════════════════════════════════════════════════
-   MAIN EXPORT — sendOrderNotification
-   Зөвхөн НЭГ мэйл (admin) явуулна
+   sendOrderNotification  (legacy)
 ══════════════════════════════════════════════════ */
 export async function sendOrderNotification(
   payload: OrderEmailPayload
 ): Promise<void> {
-  const adminEmail = process.env.ADMIN_EMAIL ?? process.env.SMTP_USER;
+  const adminEmail = process.env.ADMIN_EMAIL;
   if (!adminEmail) {
     console.warn("[email] ADMIN_EMAIL тохируулаагүй — мэйл явуулахгүй");
     return;
@@ -404,32 +395,12 @@ export async function sendOrderNotification(
   const subject =
     `🚛 Захиалга #${payload.id} — ${payload.serviceType} · ${payload.district} · ${fmtMnt(payload.totalPrice)}`;
 
-  const transporter = createTransporter();
+  await resendSend({ to: adminEmail, subject, html, tag: `order-${payload.id}` });
+}
 
-  try {
-    await transporter.sendMail({
-      from:    `"${BANK_INFO.company}" <${process.env.SMTP_USER}>`,
-      to:      adminEmail,
-      subject,
-      html,
-    });
-    console.log(`[email] ✅ Захиалга #${payload.id} мэйл явлаа → ${adminEmail}`);
-  } catch (err) {
-    console.error(`[email] ❌ Мэйл явуулахад алдаа гарлаа:`, err);
-    throw err;
-  }
-}/* ══════════════════════════════════════════════════
-   ИЙМ КОДЫГ src/services/emailService.ts ФАЙЛЫН
-   ХАМГИЙН ТӨГСГӨЛД (мөр 421-ний дараа) НЭМЭХ
-   ══════════════════════════════════════════════════
-   Шалтгаан: src/routes/orders.ts нь
-     import { sendInvoiceEmail, sendAdminOrderNotification }
-   гэж import хийдэг ч өмнө нь зөвхөн `sendOrderNotification`
-   гэдэг функц л export болсон байсан. Энэ runtime crash өгөх
-   ёстой алдаа байсан тул admin email явахгүй байсан.
+/* ══════════════════════════════════════════════════
+   ADMIN / INVOICE PAYLOAD TYPES
 ══════════════════════════════════════════════════ */
-
-/* ── Шинэ payload type-ууд ── */
 export interface AdminOrderPayload {
   adminEmail:    string;
   orderId:       number;
@@ -469,13 +440,10 @@ export interface InvoicePayload {
   completedAt:   string;
 }
 
-/* ──────────────────────────────────────────────
+/* ══════════════════════════════════════════════════
    sendAdminOrderNotification
-   Захиалга үүссэний дараа админ руу явуулах email.
-   Дотроо одоо байгаа buildOrderEmail()-ийг ашиглана.
-────────────────────────────────────────────── */
+══════════════════════════════════════════════════ */
 export async function sendAdminOrderNotification(p: AdminOrderPayload): Promise<void> {
-  // OrderEmailPayload руу хөрвүүлнэ
   const payload: OrderEmailPayload = {
     id:            p.orderId,
     serviceType:   p.serviceType,
@@ -500,39 +468,25 @@ export async function sendAdminOrderNotification(p: AdminOrderPayload): Promise<
     hour: "2-digit", minute: "2-digit",
   });
 
-  // OrderEmailPayload type-д `addOns` нь `{ label, price }[]` гэж байна.
-  // Үүнийг ашиглахын тулд buildOrderEmail дотор label ашигладаг эсэхийг шалгах хэрэгтэй.
-  // Дээрх buildOrderEmail() label-ийг ашигладаг тул ийм байхад зүгээр.
-  const html    = buildOrderEmail(payload as any, sentAt);
+  const html    = buildOrderEmail(payload, sentAt);
   const subject =
-    `🚛 Захиалга #${p.orderId} — ${p.serviceType} · ${p.zone} · ${(p.priceTotal ?? 0).toLocaleString("mn-MN")}₮`;
+    `🚛 Захиалга #${p.orderId} — ${p.serviceType} · ${p.zone} · ${fmtMnt(p.priceTotal)}`;
 
-  const transporter = createTransporter();
-
-  try {
-    await transporter.sendMail({
-      from:    `"${BANK_INFO.company}" <${process.env.SMTP_USER}>`,
-      to:      p.adminEmail,
-      subject,
-      html,
-    });
-    console.log(`[email] ✅ Admin notif #${p.orderId} → ${p.adminEmail}`);
-  } catch (err) {
-    console.error(`[email] ❌ Admin notif fail #${p.orderId}:`, err);
-    throw err;
-  }
+  await resendSend({
+    to:      p.adminEmail,
+    subject,
+    html,
+    tag:     `admin-notif-${p.orderId}`,
+  });
 }
 
-/* ──────────────────────────────────────────────
+/* ══════════════════════════════════════════════════
    sendInvoiceEmail
-   Захиалга DONE статустай болоход хэрэглэгч рүү явуулах нэхэмжлэл.
-────────────────────────────────────────────── */
+══════════════════════════════════════════════════ */
 export async function sendInvoiceEmail(p: InvoicePayload): Promise<void> {
-  const transporter = createTransporter();
   const addOns   = p.addOns ?? [];
   const addOnSum = addOns.reduce((s, a) => s + a.price, 0);
   const hasAddOn = addOns.length > 0 && addOnSum > 0;
-
   const fmt = (n: number) => (n ?? 0).toLocaleString("mn-MN") + "₮";
 
   const addOnRows = addOns.map(a => `
@@ -553,7 +507,6 @@ export async function sendInvoiceEmail(p: InvoicePayload): Promise<void> {
 <table width="600" cellpadding="0" cellspacing="0"
   style="max-width:600px;width:100%;background:#fff;border-radius:18px;overflow:hidden;
     box-shadow:0 8px 40px rgba(5,150,105,0.14);">
-
   <tr>
     <td style="background:linear-gradient(135deg,#064e3b,#059669);padding:32px 28px;">
       <h1 style="margin:0 0 6px;font-size:23px;font-weight:800;color:#fff;">
@@ -564,15 +517,13 @@ export async function sendInvoiceEmail(p: InvoicePayload): Promise<void> {
       </p>
     </td>
   </tr>
-
   <tr>
     <td style="padding:24px 28px 0;">
       <p style="margin:0 0 16px;font-size:13.5px;color:#374151;">
-        Сайн байна уу. Таны захиалсан үйлчилгээ амжилттай хүргэгдэн дууслаа. Доор нэхэмжлэлийн дэлгэрэнгүй мэдээллийг хавсаргалаа.
+        Сайн байна уу. Таны захиалсан үйлчилгээ амжилттай хүргэгдэн дууслаа.
       </p>
     </td>
   </tr>
-
   <tr><td style="padding:0 22px;"><table width="100%" cellpadding="0" cellspacing="0">
     <tr><td colspan="2" style="padding:14px 0 4px;">
       <span style="font-size:10px;font-weight:800;color:#94a3b8;letter-spacing:0.12em;">📋 ЗАХИАЛГЫН ДЭЛГЭРЭНГҮЙ</span>
@@ -598,7 +549,6 @@ export async function sendInvoiceEmail(p: InvoicePayload): Promise<void> {
       <td style="padding:8px 0;border-bottom:1px solid #f1f5f9;text-align:right;"><span style="font-size:13px;">${p.slot}</span></td>
     </tr>
   </table></td></tr>
-
   <tr><td style="padding:0 22px;"><table width="100%" cellpadding="0" cellspacing="0">
     <tr><td colspan="2" style="padding:14px 0 4px;">
       <span style="font-size:10px;font-weight:800;color:#94a3b8;letter-spacing:0.12em;">🧾 НЭХЭМЖЛЭЛ</span>
@@ -613,7 +563,6 @@ export async function sendInvoiceEmail(p: InvoicePayload): Promise<void> {
       <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;text-align:right;"><span style="font-size:13px;color:#f59e0b;font-weight:700;">${fmt(addOnSum)}</span></td>
     </tr>` : ""}
   </table></td></tr>
-
   <tr><td style="padding:0;">
     <table width="100%" cellpadding="0" cellspacing="0"><tr>
       <td style="background:linear-gradient(135deg,#064e3b,#059669);padding:20px 24px;">
@@ -624,28 +573,20 @@ export async function sendInvoiceEmail(p: InvoicePayload): Promise<void> {
       </td>
     </tr></table>
   </td></tr>
-
   <tr>
     <td style="padding:24px 28px;text-align:center;border-top:1px solid #f1f5f9;">
       <p style="margin:0;font-size:12px;color:#94a3b8;">${BANK_INFO.company} · Бохир ус тээвэрлэлтийн систем</p>
       <p style="margin:6px 0 0;font-size:11px;color:#cbd5e1;">Бидний үйлчилгээг сонгосонд баярлалаа.</p>
     </td>
   </tr>
-
 </table>
 </td></tr></table>
 </body></html>`;
 
-  try {
-    await transporter.sendMail({
-      from:    `"${BANK_INFO.company}" <${process.env.SMTP_USER}>`,
-      to:      p.customerEmail,
-      subject: `🧾 Захиалга #${p.orderId} — Нэхэмжлэл (${(p.priceTotal ?? 0).toLocaleString("mn-MN")}₮)`,
-      html,
-    });
-    console.log(`[email] ✅ Invoice #${p.orderId} → ${p.customerEmail}`);
-  } catch (err) {
-    console.error(`[email] ❌ Invoice fail #${p.orderId}:`, err);
-    throw err;
-  }
+  await resendSend({
+    to:      p.customerEmail,
+    subject: `🧾 Захиалга #${p.orderId} — Нэхэмжлэл (${fmt(p.priceTotal)})`,
+    html,
+    tag:     `invoice-${p.orderId}`,
+  });
 }
