@@ -22,32 +22,6 @@ const FROM_ADDRESS =
   process.env.RESEND_FROM ?? "Өргөжих Хаус <onboarding@resend.dev>";
 
 /* ══════════════════════════════════════════════════
-   SANDBOX MODE
-   Resend домэйн verify хийгээгүй үед бүх email-ийг
-   admin рүү дамжуулна. Тэгэхгүй бол хэрэглэгчийн email
-   рүү шууд явахыг оролдоод алдаа гарна.
-══════════════════════════════════════════════════ */
-function getRecipient(originalTo: string): {
-  realTo:   string;
-  isProxy:  boolean;
-  original: string;
-} {
-  const adminEmail   = process.env.ADMIN_EMAIL;
-  const sandboxMode  = process.env.RESEND_SANDBOX !== "false"; // default ON
-
-  // Хэрэв sandbox идэвхтэй ба admin email тохируулсан бол
-  // бүх email админ руу явна (subject дотор жинхэнэ хаягийг харуулна)
-  if (sandboxMode && adminEmail) {
-    if (originalTo.toLowerCase() === adminEmail.toLowerCase()) {
-      return { realTo: originalTo, isProxy: false, original: originalTo };
-    }
-    return { realTo: adminEmail, isProxy: true, original: originalTo };
-  }
-
-  return { realTo: originalTo, isProxy: false, original: originalTo };
-}
-
-/* ══════════════════════════════════════════════════
    FORMATTERS
 ══════════════════════════════════════════════════ */
 function fmtMnt(n: number) {
@@ -151,7 +125,7 @@ export interface OrderEmailPayload {
 }
 
 /* ══════════════════════════════════════════════════
-   HTML BUILDER
+   HTML BUILDER  (өмнөх кодтой ижил)
 ══════════════════════════════════════════════════ */
 function buildOrderEmail(p: OrderEmailPayload, sentAt: string): string {
   const pit      = normalizePitStatus(p.pitStatus);
@@ -312,25 +286,18 @@ function buildOrderEmail(p: OrderEmailPayload, sentAt: string): string {
    ТӨВЛӨРСӨН SEND HELPER
    Бүх send функц энэ дотроос Resend дуудна.
 ══════════════════════════════════════════════════ */
-export async function resendSend(args: {
+async function resendSend(args: {
   to:      string;
   subject: string;
   html:    string;
-  tag?:    string;
+  tag?:    string;   // log-д харагдах нэр
 }) {
   const tag = args.tag ?? "email";
-  const { realTo, isProxy, original } = getRecipient(args.to);
-
-  // Sandbox proxy үед subject-д жинхэнэ recipient-ыг харуулна
-  const finalSubject = isProxy
-    ? `[→ ${original}] ${args.subject}`
-    : args.subject;
-
   try {
     const { data, error } = await getResend().emails.send({
       from:    FROM_ADDRESS,
-      to:      realTo,
-      subject: finalSubject,
+      to:      args.to,
+      subject: args.subject,
       html:    args.html,
     });
 
@@ -339,11 +306,7 @@ export async function resendSend(args: {
       throw new Error(`Resend error: ${error.message ?? JSON.stringify(error)}`);
     }
 
-    if (isProxy) {
-      console.log(`[${tag}] ✅ [SANDBOX] ${original} → ${realTo} (id: ${data?.id})`);
-    } else {
-      console.log(`[${tag}] ✅ Sent → ${realTo} (id: ${data?.id})`);
-    }
+    console.log(`[${tag}] ✅ Sent → ${args.to} (id: ${data?.id})`);
     return data;
   } catch (err) {
     console.error(`[${tag}] ❌ Send failed:`, err);
@@ -475,58 +438,6 @@ export interface InvoicePayload {
   priceTotal:    number;
   createdAt:     string;
   completedAt:   string;
-}
-
-/* ══════════════════════════════════════════════════
-   ШИНЭ: Customer-ийн анх захиалга өгсний баталгаа email
-══════════════════════════════════════════════════ */
-export interface CustomerOrderReceivedPayload {
-  customerEmail: string;
-  customerName:  string;
-  orderId:       number;
-  serviceType:   string;
-  district:      string;
-  address:       string;
-  volume:        number;
-  volumeUnit:    string;
-  date:          string;
-  timeSlot:      string;
-  priceSubtotal: number;
-  addOns:        { name: string; price: number }[];
-  priceTotal:    number;
-}
-
-export async function sendCustomerOrderReceived(p: CustomerOrderReceivedPayload): Promise<void> {
-  const payload: OrderEmailPayload = {
-    id:            p.orderId,
-    serviceType:   p.serviceType,
-    district:      p.district,
-    address:       p.address,
-    volume:        p.volume,
-    volumeUnit:    p.volumeUnit,
-    date:          p.date,
-    timeSlot:      p.timeSlot,
-    basePrice:     p.priceSubtotal,
-    addOns:        (p.addOns ?? []).map(a => ({ label: a.name, price: a.price })),
-    totalPrice:    p.priceTotal,
-    customerName:  p.customerName,
-    customerEmail: p.customerEmail,
-  };
-
-  const sentAt = new Date().toLocaleDateString("mn-MN", {
-    year: "numeric", month: "long", day: "numeric",
-    hour: "2-digit", minute: "2-digit",
-  });
-
-  const html = buildOrderEmail(payload, sentAt);
-  const subject = `📬 Захиалга #${p.orderId} хүлээн авлаа — ${p.serviceType}`;
-
-  await resendSend({
-    to:      p.customerEmail,
-    subject,
-    html,
-    tag:     `customer-received-${p.orderId}`,
-  });
 }
 
 /* ══════════════════════════════════════════════════

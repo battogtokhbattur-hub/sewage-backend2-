@@ -1,4 +1,47 @@
-import { resendSend } from "./emailService";
+import { Resend } from "resend";
+
+/* ══════════════════════════════════════════════════
+   RESEND CLIENT (singleton)
+══════════════════════════════════════════════════ */
+let _resend: Resend | null = null;
+function getResend(): Resend {
+  if (_resend) return _resend;
+  const key = process.env.RESEND_API_KEY;
+  if (!key) throw new Error("RESEND_API_KEY is not set");
+  _resend = new Resend(key);
+  return _resend;
+}
+
+const FROM_ADDRESS =
+  process.env.RESEND_FROM ?? "Өргөжих Хаус <onboarding@resend.dev>";
+
+async function resendSend(args: {
+  to:      string;
+  subject: string;
+  html:    string;
+  tag?:    string;
+}) {
+  const tag = args.tag ?? "status";
+  try {
+    const { data, error } = await getResend().emails.send({
+      from:    FROM_ADDRESS,
+      to:      args.to,
+      subject: args.subject,
+      html:    args.html,
+    });
+
+    if (error) {
+      console.error(`[${tag}] ❌ Resend API error:`, error);
+      throw new Error(`Resend error: ${error.message ?? JSON.stringify(error)}`);
+    }
+
+    console.log(`[${tag}] ✅ Sent → ${args.to} (id: ${data?.id})`);
+    return data;
+  } catch (err) {
+    console.error(`[${tag}] ❌ Send failed:`, err);
+    throw err;
+  }
+}
 
 function fmtMntStatus(n: number) {
   return (n ?? 0).toLocaleString("mn-MN") + "₮";
@@ -12,7 +55,7 @@ const STATUS_BANK_INFO = {
 };
 
 /* ══════════════════════════════════════════════════
-   HTML helpers
+   HTML helpers (өмнөхтэй ижил)
 ══════════════════════════════════════════════════ */
 function statusEmailWrapper(opts: {
   bgGradient: string;
@@ -434,6 +477,7 @@ export async function sendOrderCompletedEmail(p: OrderCompletedPayload): Promise
    6) CANCELED
 ══════════════════════════════════════════════════ */
 export async function sendOrderCanceledEmail(p: StatusEmailPayload & { reason?: string }): Promise<void> {
+  const url = `${p.appUrl ?? process.env.APP_URL ?? "http://localhost:3000"}/dashboard/orders/${p.orderId}`;
   const html = statusEmailWrapper({
     bgGradient: "linear-gradient(135deg,#7f1d1d 0%,#b91c1c 50%,#dc2626 100%)",
     badgeBg: "#fee2e2", badgeColor: "#991b1b", badgeText: "❌ Цуцлагдсан",
