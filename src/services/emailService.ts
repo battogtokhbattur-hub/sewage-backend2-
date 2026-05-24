@@ -22,6 +22,67 @@ const FROM_ADDRESS =
   process.env.RESEND_FROM ?? "Өргөжих Хаус <onboarding@resend.dev>";
 
 /* ══════════════════════════════════════════════════
+   SANDBOX MODE
+   Resend домэйн verify хийгээгүй үед Resend нь зөвхөн
+   account-той холбоотой email рүү л явуулна. Бусад
+   хаягийг бүгдийг ADMIN_EMAIL рүү дамжуулна.
+   Default = ON (RESEND_SANDBOX !== "false")
+══════════════════════════════════════════════════ */
+function getRecipient(originalTo: string): {
+  realTo:   string;
+  isProxy:  boolean;
+  original: string;
+} {
+  const adminEmail  = process.env.ADMIN_EMAIL;
+  const sandboxMode = process.env.RESEND_SANDBOX !== "false";
+
+  if (sandboxMode && adminEmail) {
+    if (originalTo.toLowerCase() === adminEmail.toLowerCase()) {
+      return { realTo: originalTo, isProxy: false, original: originalTo };
+    }
+    return { realTo: adminEmail, isProxy: true, original: originalTo };
+  }
+
+  return { realTo: originalTo, isProxy: false, original: originalTo };
+}
+
+/* ══════════════════════════════════════════════════
+   AUDIENCE-Д АВТОМАТ CONTACT НЭМЭХ
+   Email явуулахын өмнө хэрэглэгчийн email-ийг
+   Resend Audience-д нэмж "verified recipient" болгоно.
+   RESEND_AUDIENCE_ID тохируулсан үед л ажиллана.
+══════════════════════════════════════════════════ */
+async function ensureContactInAudience(email: string, name?: string): Promise<void> {
+  const audienceId = process.env.RESEND_AUDIENCE_ID;
+  if (!audienceId || !email) return;
+
+  try {
+    const [firstName, ...rest] = (name ?? "").split(" ");
+    const lastName = rest.join(" ") || "User";
+
+    await getResend().contacts.create({
+      email,
+      firstName: firstName || "Customer",
+      lastName,
+      unsubscribed: false,
+      audienceId,
+    });
+    console.log(`[audience] ✅ Contact added: ${email}`);
+  } catch (err: any) {
+    const msg = String(err?.message ?? "");
+    if (
+      msg.includes("already exists") ||
+      msg.includes("duplicate")      ||
+      msg.includes("422")
+    ) {
+      console.log(`[audience] ℹ️ Already in audience: ${email}`);
+    } else {
+      console.warn(`[audience] ⚠️ Add failed (${email}):`, msg);
+    }
+  }
+}
+
+/* ══════════════════════════════════════════════════
    FORMATTERS
 ══════════════════════════════════════════════════ */
 function fmtMnt(n: number) {
@@ -79,7 +140,7 @@ function normalizePitStatus(raw?: string): {
   };
   const DESCS: Record<PitKey, string> = {
     yes:    "Зориулалтын нүх байна — Бохир ус сорох боломжтой",
-    no:     "Зориулалтын нүх байхгүй — Бохир ид сорхалх боломж байхгүй байж болно",
+    no:     "Зориулалтын нүх байхгүй — Бохир ус сорох боломж байхгүй байж болно",
     unsure: "Тодорхойгүй — Жолооч газарт очоод шалгана",
   };
   const COLORS: Record<PitKey, string> = {
@@ -125,7 +186,7 @@ export interface OrderEmailPayload {
 }
 
 /* ══════════════════════════════════════════════════
-   HTML BUILDER  (өмнөх кодтой ижил)
+   HTML BUILDER
 ══════════════════════════════════════════════════ */
 function buildOrderEmail(p: OrderEmailPayload, sentAt: string): string {
   const pit      = normalizePitStatus(p.pitStatus);
@@ -261,7 +322,7 @@ function buildOrderEmail(p: OrderEmailPayload, sentAt: string): string {
           color:#ffffff;text-decoration:none;font-size:14.5px;font-weight:700;
           padding:15px 40px;border-radius:12px;letter-spacing:0.02em;
           box-shadow:0 4px 16px rgba(37,99,235,0.35);">
-        Admin Dashboard-д харах &rarr;
+        Захиалгаа харах &rarr;
       </a>
     </td>
   </tr>
@@ -285,19 +346,30 @@ function buildOrderEmail(p: OrderEmailPayload, sentAt: string): string {
 /* ══════════════════════════════════════════════════
    ТӨВЛӨРСӨН SEND HELPER
    Бүх send функц энэ дотроос Resend дуудна.
+   EXPORT хийсэн — statusEmails.ts ч ашигладаг
 ══════════════════════════════════════════════════ */
-async function resendSend(args: {
+export async function resendSend(args: {
   to:      string;
   subject: string;
   html:    string;
-  tag?:    string;   // log-д харагдах нэр
+  tag?:    string;
 }) {
   const tag = args.tag ?? "email";
+  const { realTo, isProxy, original } = getRecipient(args.to);
+
+  const finalSubject = isProxy
+    ? `[→ ${original}] ${args.subject}`
+    : args.subject;
+
   try {
+    // Audience-д автомат нэмэх (RESEND_AUDIENCE_ID тохируулсан үед)
+    // Жинхэнэ хэрэглэгчийн email-ийг нэмнэ (proxy биш)
+    await ensureContactInAudience(original);
+
     const { data, error } = await getResend().emails.send({
       from:    FROM_ADDRESS,
-      to:      args.to,
-      subject: args.subject,
+      to:      realTo,
+      subject: finalSubject,
       html:    args.html,
     });
 
@@ -306,7 +378,11 @@ async function resendSend(args: {
       throw new Error(`Resend error: ${error.message ?? JSON.stringify(error)}`);
     }
 
-    console.log(`[${tag}] ✅ Sent → ${args.to} (id: ${data?.id})`);
+    if (isProxy) {
+      console.log(`[${tag}] ✅ [SANDBOX] ${original} → ${realTo} (id: ${data?.id})`);
+    } else {
+      console.log(`[${tag}] ✅ Sent → ${realTo} (id: ${data?.id})`);
+    }
     return data;
   } catch (err) {
     console.error(`[${tag}] ❌ Send failed:`, err);
@@ -438,6 +514,64 @@ export interface InvoicePayload {
   priceTotal:    number;
   createdAt:     string;
   completedAt:   string;
+}
+
+/* ══════════════════════════════════════════════════
+   ШИНЭ: Customer-д захиалга хүлээн авсан баталгаа
+══════════════════════════════════════════════════ */
+export interface CustomerOrderReceivedPayload {
+  customerEmail: string;
+  customerName:  string;
+  customerPhone?: string;
+  orderId:       number;
+  serviceType:   string;
+  district:      string;
+  address:       string;
+  pitStatus?:    string;
+  pitType?:      string;
+  volume:        number;
+  volumeUnit:    string;
+  date:          string;
+  timeSlot:      string;
+  priceSubtotal: number;
+  addOns:        { name: string; price: number }[];
+  priceTotal:    number;
+}
+
+export async function sendCustomerOrderReceived(p: CustomerOrderReceivedPayload): Promise<void> {
+  const payload: OrderEmailPayload = {
+    id:            p.orderId,
+    serviceType:   p.serviceType,
+    district:      p.district,
+    address:       p.address,
+    pitStatus:     p.pitStatus,
+    pitType:       p.pitType,
+    volume:        p.volume,
+    volumeUnit:    p.volumeUnit,
+    date:          p.date,
+    timeSlot:      p.timeSlot,
+    basePrice:     p.priceSubtotal,
+    addOns:        (p.addOns ?? []).map(a => ({ label: a.name, price: a.price })),
+    totalPrice:    p.priceTotal,
+    customerName:  p.customerName,
+    customerEmail: p.customerEmail,
+    customerPhone: p.customerPhone,
+  };
+
+  const sentAt = new Date().toLocaleDateString("mn-MN", {
+    year: "numeric", month: "long", day: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  });
+
+  const html = buildOrderEmail(payload, sentAt);
+  const subject = `📬 Захиалга #${p.orderId} хүлээн авлаа — ${p.serviceType}`;
+
+  await resendSend({
+    to:      p.customerEmail,
+    subject,
+    html,
+    tag:     `customer-received-${p.orderId}`,
+  });
 }
 
 /* ══════════════════════════════════════════════════
