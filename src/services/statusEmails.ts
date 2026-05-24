@@ -1,8 +1,23 @@
 import { Resend } from "resend";
 
 /* ══════════════════════════════════════════════════
-   RESEND CLIENT (singleton)
+   ⚠️ ЗАСВАР:
+   Энэ файлд одоо SANDBOX PROXY логик нэмэгдсэн.
+
+   Өмнөх алдаа: Resend testing mode дээр зөвхөн
+   account-той холбоотой email рүү л явуулдаг.
+   Status email-үүд шууд хэрэглэгчийн email рүү
+   очиж байсан учир бүгд "validation_error" гэж
+   унаж байсан.
+
+   Одоо:
+   - RESEND_SANDBOX=true (default) үед бүх email
+     ADMIN_EMAIL руу proxy хийгдэнэ (унахгүй)
+   - RESEND_SANDBOX=false + verified домэйнтэй үед
+     жинхэнэ хэрэглэгчид рүү очно
 ══════════════════════════════════════════════════ */
+
+/* ── Resend client (singleton, lazy) ── */
 let _resend: Resend | null = null;
 function getResend(): Resend {
   if (_resend) return _resend;
@@ -15,6 +30,30 @@ function getResend(): Resend {
 const FROM_ADDRESS =
   process.env.RESEND_FROM ?? "Өргөжих Хаус <onboarding@resend.dev>";
 
+/* ── SANDBOX PROXY ──
+   Resend domain verify хийгээгүй үед — бүх email-ийг
+   ADMIN_EMAIL руу шилжүүлнэ. Subject-ын эхэнд
+   "[→ original@email]" гэсэн tag нэмнэ.
+*/
+function getRecipient(originalTo: string): {
+  realTo:   string;
+  isProxy:  boolean;
+  original: string;
+} {
+  const adminEmail  = process.env.ADMIN_EMAIL;
+  const sandboxMode = process.env.RESEND_SANDBOX !== "false";
+
+  if (sandboxMode && adminEmail) {
+    if (originalTo.toLowerCase() === adminEmail.toLowerCase()) {
+      return { realTo: originalTo, isProxy: false, original: originalTo };
+    }
+    return { realTo: adminEmail, isProxy: true, original: originalTo };
+  }
+
+  return { realTo: originalTo, isProxy: false, original: originalTo };
+}
+
+/* ── Төвлөрсөн send helper (sandbox-аа дотроо хийнэ) ── */
 async function resendSend(args: {
   to:      string;
   subject: string;
@@ -22,11 +61,17 @@ async function resendSend(args: {
   tag?:    string;
 }) {
   const tag = args.tag ?? "status";
+  const { realTo, isProxy, original } = getRecipient(args.to);
+
+  const finalSubject = isProxy
+    ? `[→ ${original}] ${args.subject}`
+    : args.subject;
+
   try {
     const { data, error } = await getResend().emails.send({
       from:    FROM_ADDRESS,
-      to:      args.to,
-      subject: args.subject,
+      to:      realTo,
+      subject: finalSubject,
       html:    args.html,
     });
 
@@ -35,7 +80,11 @@ async function resendSend(args: {
       throw new Error(`Resend error: ${error.message ?? JSON.stringify(error)}`);
     }
 
-    console.log(`[${tag}] ✅ Sent → ${args.to} (id: ${data?.id})`);
+    if (isProxy) {
+      console.log(`[${tag}] ✅ [SANDBOX] ${original} → ${realTo} (id: ${data?.id})`);
+    } else {
+      console.log(`[${tag}] ✅ Sent → ${realTo} (id: ${data?.id})`);
+    }
     return data;
   } catch (err) {
     console.error(`[${tag}] ❌ Send failed:`, err);
@@ -55,7 +104,7 @@ const STATUS_BANK_INFO = {
 };
 
 /* ══════════════════════════════════════════════════
-   HTML helpers (өмнөхтэй ижил)
+   HTML helpers
 ══════════════════════════════════════════════════ */
 function statusEmailWrapper(opts: {
   bgGradient: string;
@@ -217,6 +266,11 @@ export interface AdminPaymentNoticePayload {
    1) CONFIRMED
 ══════════════════════════════════════════════════ */
 export async function sendOrderConfirmedEmail(p: StatusEmailPayload): Promise<void> {
+  if (!p.to) {
+    console.warn(`[confirmed-${p.orderId}] ⚠️ Хэрэглэгчийн email байхгүй — алгаслаа`);
+    return;
+  }
+
   const url = `${p.appUrl ?? process.env.APP_URL ?? "http://localhost:3000"}/dashboard/orders/${p.orderId}`;
   const html = statusEmailWrapper({
     bgGradient: "linear-gradient(135deg,#1e3a8a 0%,#1d4ed8 55%,#2563eb 100%)",
@@ -256,6 +310,11 @@ export async function sendOrderConfirmedEmail(p: StatusEmailPayload): Promise<vo
    2) ASSIGNED
 ══════════════════════════════════════════════════ */
 export async function sendOrderAssignedEmail(p: AssignedEmailPayload): Promise<void> {
+  if (!p.to) {
+    console.warn(`[assigned-${p.orderId}] ⚠️ Хэрэглэгчийн email байхгүй — алгаслаа`);
+    return;
+  }
+
   const url = `${p.appUrl ?? process.env.APP_URL ?? "http://localhost:3000"}/dashboard/orders/${p.orderId}`;
   const driverInfoFields: any[] = [
     { icon: "🧑", label: "Жолоочийн нэр",  value: p.driverName,  color: "#7c3aed" },
@@ -303,6 +362,11 @@ export async function sendOrderAssignedEmail(p: AssignedEmailPayload): Promise<v
    3) IN_PROGRESS
 ══════════════════════════════════════════════════ */
 export async function sendOrderInProgressEmail(p: StatusEmailPayload): Promise<void> {
+  if (!p.to) {
+    console.warn(`[in-progress-${p.orderId}] ⚠️ Хэрэглэгчийн email байхгүй — алгаслаа`);
+    return;
+  }
+
   const url = `${p.appUrl ?? process.env.APP_URL ?? "http://localhost:3000"}/dashboard/orders/${p.orderId}`;
   const html = statusEmailWrapper({
     bgGradient: "linear-gradient(135deg,#92400e 0%,#d97706 50%,#f59e0b 100%)",
@@ -340,6 +404,11 @@ export async function sendOrderInProgressEmail(p: StatusEmailPayload): Promise<v
    4) AWAITING_PAYMENT
 ══════════════════════════════════════════════════ */
 export async function sendInvoicePaymentEmail(p: InvoicePaymentPayload): Promise<void> {
+  if (!p.to) {
+    console.warn(`[invoice-payment-${p.orderId}] ⚠️ Хэрэглэгчийн email байхгүй — алгаслаа`);
+    return;
+  }
+
   const url = `${p.appUrl ?? process.env.APP_URL ?? "http://localhost:3000"}/dashboard/orders/${p.orderId}`;
   const ref = `URGUJIKH-${String(p.orderId).padStart(6, "0")}`;
   const addOnSum = (p.addOns ?? []).reduce((s, a) => s + a.price, 0);
@@ -439,6 +508,11 @@ export async function sendInvoicePaymentEmail(p: InvoicePaymentPayload): Promise
    5) DONE
 ══════════════════════════════════════════════════ */
 export async function sendOrderCompletedEmail(p: OrderCompletedPayload): Promise<void> {
+  if (!p.to) {
+    console.warn(`[completed-${p.orderId}] ⚠️ Хэрэглэгчийн email байхгүй — алгаслаа`);
+    return;
+  }
+
   const url = `${p.appUrl ?? process.env.APP_URL ?? "http://localhost:3000"}/dashboard/orders/${p.orderId}`;
   const html = statusEmailWrapper({
     bgGradient: "linear-gradient(135deg,#064e3b 0%,#065f46 50%,#059669 100%)",
@@ -477,6 +551,11 @@ export async function sendOrderCompletedEmail(p: OrderCompletedPayload): Promise
    6) CANCELED
 ══════════════════════════════════════════════════ */
 export async function sendOrderCanceledEmail(p: StatusEmailPayload & { reason?: string }): Promise<void> {
+  if (!p.to) {
+    console.warn(`[canceled-${p.orderId}] ⚠️ Хэрэглэгчийн email байхгүй — алгаслаа`);
+    return;
+  }
+
   const url = `${p.appUrl ?? process.env.APP_URL ?? "http://localhost:3000"}/dashboard/orders/${p.orderId}`;
   const html = statusEmailWrapper({
     bgGradient: "linear-gradient(135deg,#7f1d1d 0%,#b91c1c 50%,#dc2626 100%)",
@@ -517,6 +596,11 @@ export async function sendOrderCanceledEmail(p: StatusEmailPayload & { reason?: 
    7) ADMIN PAYMENT NOTICE
 ══════════════════════════════════════════════════ */
 export async function sendAdminPaymentNotice(p: AdminPaymentNoticePayload): Promise<void> {
+  if (!p.adminEmail) {
+    console.warn(`[payment-notice-${p.orderId}] ⚠️ Админ email байхгүй — алгаслаа`);
+    return;
+  }
+
   const url = p.dashboardUrl ?? `${process.env.ADMIN_DASHBOARD_URL ?? "http://localhost:3000"}/admin`;
   const html = statusEmailWrapper({
     bgGradient: "linear-gradient(135deg,#065f46 0%,#10b981 50%,#34d399 100%)",
