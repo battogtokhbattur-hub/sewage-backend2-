@@ -1,93 +1,77 @@
-import { Resend } from "resend";
+import nodemailer from "nodemailer";
 
 /* ══════════════════════════════════════════════════
-   ⚠️ ЗАСВАР:
-   Энэ файлд одоо SANDBOX PROXY логик нэмэгдсэн.
+   ⚠️ ШИНЭЧЛЭЛТ:
+   Энэ файл одоо Resend биш, NODEMAILER + SMTP
+   ашиглаж байна. Учир:
 
-   Өмнөх алдаа: Resend testing mode дээр зөвхөн
-   account-той холбоотой email рүү л явуулдаг.
-   Status email-үүд шууд хэрэглэгчийн email рүү
-   очиж байсан учир бүгд "validation_error" гэж
-   унаж байсан.
+   - Resend testing mode-д domain verify хийгээгүй
+     бол зөвхөн account-той холбоотой email рүү л
+     явуулна → хэрэглэгч рүү шууд явуулах боломжгүй.
+   - Gmail SMTP-аар бол ямар ч email хаяг руу
+     шууд явуулж болно. Домэйн шаардлагагүй.
 
-   Одоо:
-   - RESEND_SANDBOX=true (default) үед бүх email
-     ADMIN_EMAIL руу proxy хийгдэнэ (унахгүй)
-   - RESEND_SANDBOX=false + verified домэйнтэй үед
-     жинхэнэ хэрэглэгчид рүү очно
+   Vercel дээр дараах env variables байх ёстой:
+     SMTP_HOST  = smtp.gmail.com
+     SMTP_PORT  = 465
+     SMTP_USER  = battogtokhbattur@gmail.com
+     SMTP_PASS  = <Gmail App Password — 16 оронтой>
+     SMTP_FROM  = "Өргөжих Хаус <battogtokhbattur@gmail.com>"
+                   (заавал биш — байхгүй бол SMTP_USER ашиглана)
 ══════════════════════════════════════════════════ */
 
-/* ── Resend client (singleton, lazy) ── */
-let _resend: Resend | null = null;
-function getResend(): Resend {
-  if (_resend) return _resend;
-  const key = process.env.RESEND_API_KEY;
-  if (!key) throw new Error("RESEND_API_KEY is not set");
-  _resend = new Resend(key);
-  return _resend;
+/* ── Nodemailer transporter (singleton) ── */
+let _transporter: nodemailer.Transporter | null = null;
+
+function getTransporter(): nodemailer.Transporter {
+  if (_transporter) return _transporter;
+
+  const host = process.env.SMTP_HOST;
+  const port = Number(process.env.SMTP_PORT ?? 465);
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+
+  if (!host || !user || !pass) {
+    throw new Error(
+      "SMTP credentials дутуу байна. Vercel env дээр SMTP_HOST, SMTP_USER, SMTP_PASS-ийг тохируулна уу."
+    );
+  }
+
+  _transporter = nodemailer.createTransport({
+    host,
+    port,
+    secure: port === 465, // 465 → SSL, 587 → STARTTLS
+    auth: { user, pass },
+  });
+
+  return _transporter;
 }
 
 const FROM_ADDRESS =
-  process.env.RESEND_FROM ?? "Өргөжих Хаус <onboarding@resend.dev>";
+  process.env.SMTP_FROM ??
+  `Өргөжих Хаус <${process.env.SMTP_USER ?? "noreply@urgujikh.mn"}>`;
 
-/* ── SANDBOX PROXY ──
-   Resend domain verify хийгээгүй үед — бүх email-ийг
-   ADMIN_EMAIL руу шилжүүлнэ. Subject-ын эхэнд
-   "[→ original@email]" гэсэн tag нэмнэ.
-*/
-function getRecipient(originalTo: string): {
-  realTo:   string;
-  isProxy:  boolean;
-  original: string;
-} {
-  const adminEmail  = process.env.ADMIN_EMAIL;
-  const sandboxMode = process.env.RESEND_SANDBOX !== "false";
-
-  if (sandboxMode && adminEmail) {
-    if (originalTo.toLowerCase() === adminEmail.toLowerCase()) {
-      return { realTo: originalTo, isProxy: false, original: originalTo };
-    }
-    return { realTo: adminEmail, isProxy: true, original: originalTo };
-  }
-
-  return { realTo: originalTo, isProxy: false, original: originalTo };
-}
-
-/* ── Төвлөрсөн send helper (sandbox-аа дотроо хийнэ) ── */
-async function resendSend(args: {
+/* ── Төвлөрсөн send helper ── */
+async function smtpSend(args: {
   to:      string;
   subject: string;
   html:    string;
   tag?:    string;
 }) {
   const tag = args.tag ?? "status";
-  const { realTo, isProxy, original } = getRecipient(args.to);
-
-  const finalSubject = isProxy
-    ? `[→ ${original}] ${args.subject}`
-    : args.subject;
 
   try {
-    const { data, error } = await getResend().emails.send({
+    const info = await getTransporter().sendMail({
       from:    FROM_ADDRESS,
-      to:      realTo,
-      subject: finalSubject,
+      to:      args.to,
+      subject: args.subject,
       html:    args.html,
     });
 
-    if (error) {
-      console.error(`[${tag}] ❌ Resend API error:`, error);
-      throw new Error(`Resend error: ${error.message ?? JSON.stringify(error)}`);
-    }
-
-    if (isProxy) {
-      console.log(`[${tag}] ✅ [SANDBOX] ${original} → ${realTo} (id: ${data?.id})`);
-    } else {
-      console.log(`[${tag}] ✅ Sent → ${realTo} (id: ${data?.id})`);
-    }
-    return data;
-  } catch (err) {
-    console.error(`[${tag}] ❌ Send failed:`, err);
+    console.log(`[${tag}] ✅ Sent → ${args.to} (id: ${info.messageId})`);
+    return info;
+  } catch (err: any) {
+    console.error(`[${tag}] ❌ SMTP send failed:`, err?.message ?? err);
     throw err;
   }
 }
@@ -298,7 +282,7 @@ export async function sendOrderConfirmedEmail(p: StatusEmailPayload): Promise<vo
     ctaText: "Захиалгаа харах →", ctaUrl: url,
   });
 
-  await resendSend({
+  await smtpSend({
     to: p.to,
     subject: `✅ Захиалга #${p.orderId} баталгаажлаа`,
     html,
@@ -350,7 +334,7 @@ export async function sendOrderAssignedEmail(p: AssignedEmailPayload): Promise<v
     ctaColor: "linear-gradient(135deg,#7c3aed,#5b21b6)",
   });
 
-  await resendSend({
+  await smtpSend({
     to: p.to,
     subject: `🚛 Захиалга #${p.orderId} — Жолооч хувиарлагдлаа`,
     html,
@@ -392,7 +376,7 @@ export async function sendOrderInProgressEmail(p: StatusEmailPayload): Promise<v
     ctaColor: "linear-gradient(135deg,#d97706,#92400e)",
   });
 
-  await resendSend({
+  await smtpSend({
     to: p.to,
     subject: `🔄 Захиалга #${p.orderId} — Үйлчилгээ эхэллээ`,
     html,
@@ -496,7 +480,7 @@ export async function sendInvoicePaymentEmail(p: InvoicePaymentPayload): Promise
     ctaColor: "linear-gradient(135deg,#ea580c,#7c2d12)",
   });
 
-  await resendSend({
+  await smtpSend({
     to: p.to,
     subject: `🧾 Захиалга #${p.orderId} — Төлбөрийн нэхэмжлэл (${fmtMntStatus(p.totalPrice)})`,
     html,
@@ -539,7 +523,7 @@ export async function sendOrderCompletedEmail(p: OrderCompletedPayload): Promise
     ctaColor: "linear-gradient(135deg,#059669,#065f46)",
   });
 
-  await resendSend({
+  await smtpSend({
     to: p.to,
     subject: `🎉 Захиалга #${p.orderId} амжилттай дууслаа — Баярлалаа!`,
     html,
@@ -584,7 +568,7 @@ export async function sendOrderCanceledEmail(p: StatusEmailPayload & { reason?: 
     ctaColor: "linear-gradient(135deg,#dc2626,#7f1d1d)",
   });
 
-  await resendSend({
+  await smtpSend({
     to: p.to,
     subject: `❌ Захиалга #${p.orderId} цуцлагдлаа`,
     html,
@@ -629,7 +613,7 @@ export async function sendAdminPaymentNotice(p: AdminPaymentNoticePayload): Prom
     ctaColor: "linear-gradient(135deg,#10b981,#065f46)",
   });
 
-  await resendSend({
+  await smtpSend({
     to: p.adminEmail,
     subject: `💰 [Төлбөр] Захиалга #${p.orderId} — Хэрэглэгч төлсөн`,
     html,
